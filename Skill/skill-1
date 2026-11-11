@@ -1,0 +1,148 @@
+# VISIONPORT - CAT AND DOG DETECTION SYSTEM
+# 1. INSTALL AND IMPORT LIBRARIES
+!pip install -q ultralytics
+import os
+import cv2
+import zipfile
+import numpy as np
+import matplotlib.pyplot as plt
+from ultralytics import YOLO
+from google.colab import files
+from IPython.display import display
+print("=" * 60)
+print("       VISIONPORT - CAT AND DOG DETECTION")
+print("=" * 60)
+# 2. LOAD PRETRAINED YOLO MODEL
+print("\n[1] LOADING YOLO MODEL...")
+# YOLO11 Nano model
+model = YOLO("yolo11n.pt")
+print("YOLO model loaded successfully!")
+print("Model: YOLO11 Nano")
+print("Architecture: CNN-based object detection")
+# 3. UPLOAD IMAGES
+print("\n[2] UPLOAD YOUR IMAGES")
+uploaded = files.upload()
+if not uploaded:
+    raise ValueError("No images uploaded!")
+# Create output folder
+os.makedirs("VisionPort_Results", exist_ok=True)
+# COCO class IDs
+CAT_ID = 15
+DOG_ID = 16
+total_cats = 0
+total_dogs = 0
+total_images = 0
+# 4. PROCESS EACH IMAGE
+for filename in uploaded.keys():
+    print("\n" + "-" * 50)
+    print("Processing:", filename)
+    try:
+        # Read uploaded image
+        image = cv2.imread(filename)
+        if image is None:
+            print("Invalid image file. Skipping...")
+            continue
+        total_images += 1
+        # 5. YOLO OBJECT DETECTION
+        results = model.predict(
+            source=image,
+            conf=0.25,
+            imgsz=640,
+            classes=[CAT_ID, DOG_ID],
+            verbose=False
+        )
+        result = results[0]
+        # Get bounding boxes and predictions
+        detected_cats = 0
+        detected_dogs = 0
+        print("\nDETECTION RESULTS:")
+        if result.boxes is not None:
+            for box in result.boxes:
+                # Get class ID
+                class_id = int(box.cls[0].item())
+                # Get confidence score
+                confidence = float(box.conf[0].item()) * 100
+                if class_id == CAT_ID:
+                    label = "CAT"
+                    detected_cats += 1
+                elif class_id == DOG_ID:
+                    label = "DOG"
+                    detected_dogs += 1
+                else:
+                    continue
+                print(
+                    f"{label} detected - "
+                    f"Confidence: {confidence:.2f}%"
+                )
+        # Update totals
+        total_cats += detected_cats
+        total_dogs += detected_dogs
+        # 6. DRAW BOUNDING BOXES
+        annotated_image = result.plot()
+        # Convert BGR to RGB for Matplotlib
+        annotated_image = cv2.cvtColor(
+            annotated_image,
+            cv2.COLOR_BGR2RGB
+        )
+        # 7. DISPLAY RESULTS
+        print("\nIMAGE SUMMARY:")
+        if detected_cats == 0 and detected_dogs == 0:
+            print("No cats or dogs detected.")
+        else:
+            print("Cats:", detected_cats)
+            print("Dogs:", detected_dogs)
+        plt.figure(figsize=(10, 7))
+        plt.imshow(annotated_image)
+        plt.title(
+            f"VisionPort Detection\n"
+            f"Cats: {detected_cats} | Dogs: {detected_dogs}"
+        )
+        plt.axis("off")
+        plt.show()
+        # Save annotated image
+        output_path = os.path.join(
+            "VisionPort_Results",
+            "detected_" + os.path.splitext(filename)[0] + ".jpg"
+        )
+        cv2.imwrite(
+            output_path,
+            cv2.cvtColor(
+                annotated_image,
+                cv2.COLOR_RGB2BGR
+            )
+        )
+        print("Result saved:", output_path)
+    except Exception as e:
+        print("Error processing image:", e)
+# 8. FINAL PROJECT SUMMARY
+print("\n" + "=" * 60)
+print("          VISIONPORT PROJECT SUMMARY")
+print("=" * 60)
+print("Images processed:", total_images)
+print("Total cats detected:", total_cats)
+print("Total dogs detected:", total_dogs)
+#print("Total animals detected:", total_cats + total_dogs)
+#print("\nDetection model: YOLO11n")
+#print("Task: Object Detection")
+#print("Classes: Cat and Dog")
+#print("\nProject execution completed!")
+# 9. SAVE ALL RESULTS AS ZIP
+if os.path.exists("VisionPort_Results"):
+    with zipfile.ZipFile(
+        "VisionPort_Results.zip", "w"
+    ) as zip_file:
+        for root, dirs, filenames in os.walk(
+            "VisionPort_Results"
+        ):
+            for filename in filenames:
+                path = os.path.join(root, filename)
+                zip_file.write(
+                    path,
+                    arcname=os.path.relpath(
+                        path, "VisionPort_Results"
+                    )
+                )
+    print("\nDownloading annotated images...")
+    files.download("VisionPort_Results.zip")
+print("\nVISIONPORT FINISHED SUCCESSFULLY!")
+print("=" * 60)
