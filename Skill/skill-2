@@ -1,0 +1,44 @@
+!pip -q install ultralytics
+
+import cv2, numpy as np, base64, torch
+from ultralytics import YOLO
+from google.colab import output
+from IPython.display import display, Javascript, Image
+
+model = YOLO("yolov8n.pt")
+device = 0 if torch.cuda.is_available() else "cpu"
+preview = display(Image(data=b""), display_id=True)
+
+def detect(data):
+    frame = cv2.imdecode(
+        np.frombuffer(base64.b64decode(data.split(",")[1]), np.uint8),
+        cv2.IMREAD_COLOR
+    )
+    result = model.predict(frame, device=device, verbose=False)[0]
+    preview.update(Image(data=cv2.imencode(".jpg", result.plot())[1].tobytes()))
+
+output.register_callback("visionport.detect", detect)
+
+display(Javascript("""
+(async () => {
+  const box = document.createElement("div");
+  box.innerHTML = '<video autoplay playsinline muted style="width:480px;background:#222"></video><button>Stop camera</button><p>Requesting camera…</p>';
+  document.body.appendChild(box);
+  const video = box.querySelector("video"), msg = box.querySelector("p");
+  const stream = await navigator.mediaDevices.getUserMedia({video:true});
+  video.srcObject = stream;
+  const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
+  box.querySelector("button").onclick = () => stream.getTracks().forEach(t => t.stop());
+  msg.textContent = "Camera running — annotated detections appear below.";
+  async function loop() {
+    if (!stream.active) return;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    await google.colab.kernel.invokeFunction(
+      "visionport.detect", [canvas.toDataURL("image/jpeg", 0.7)], {}
+    );
+    setTimeout(loop, 300);
+  }
+  video.onloadedmetadata = loop;
+})().catch(e => alert("Camera error: " + e.message));
+""")) 
