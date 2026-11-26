@@ -1,0 +1,184 @@
+# ==========================================================
+# PROJECT REPOSITORY, GIT WORKFLOW AND PYTORCH-CUDA SETUP
+# ==========================================================
+
+import os
+import torch
+import torchvision
+import numpy as np
+import subprocess
+import torch.nn as nn
+import torch.optim as optim
+
+print("=" * 55)
+print("PROJECT REPOSITORY AND DEVELOPMENT ENVIRONMENT")
+print("=" * 55)
+
+# 1. CHECK GIT VERSION
+print("\n1. GIT VERSION")
+!git --version
+
+# 2. CONFIGURE GIT
+!git config --global user.name "Student"
+!git config --global user.email "student@example.com"
+
+# 3. CREATE PROJECT REPOSITORY
+project_name = "PyTorch_CUDA_Project"
+os.makedirs(project_name, exist_ok=True)
+os.chdir(project_name)
+
+# 4. CREATE PROJECT FILES
+with open("README.md", "w") as f:
+    f.write("# PyTorch CUDA Project\nProject Repository and GPU Development")
+
+with open("main.py", "w") as f:
+    f.write('print("PyTorch Project Running Successfully!")')
+
+with open("requirements.txt", "w") as f:
+    f.write("torch\ntorchvision\nnumpy\n")
+
+print("\n2. PROJECT FILES CREATED")
+print(os.listdir())
+
+# 5. INITIALIZE GIT REPOSITORY
+!git init
+!git add .
+!git commit -m "Initial project setup"
+
+print("\n3. GIT REPOSITORY STATUS")
+!git status
+!git log --oneline
+
+# 6. CREATE DEVELOPMENT BRANCH
+!git switch -c development
+
+print("\n4. DEVELOPMENT BRANCH CREATED")
+!git branch
+
+# 7. CHECK PYTORCH AND TORCHVISION
+print("\n5. PYTORCH ENVIRONMENT")
+print("PyTorch Version:", torch.__version__)
+print("Torchvision Version:", torchvision.__version__)
+print("NumPy Version:", np.__version__)
+
+# 8. CHECK CUDA AVAILABILITY
+print("\n6. CUDA GPU CHECK")
+
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+    print("CUDA Available: Yes")
+    print("GPU Name:", torch.cuda.get_device_name(0))
+    print("CUDA Version:", torch.version.cuda)
+else:
+    device = torch.device("cpu")
+    print("CUDA Available: No")
+    print("Using CPU instead")
+
+# 9. CREATE CPU AND GPU TENSORS
+print("\n7. TENSOR OPERATIONS")
+
+A = torch.tensor([10, 20, 30, 40])
+B = torch.tensor([5, 10, 15, 20])
+
+print("CPU Tensor A:", A)
+print("CPU Tensor B:", B)
+
+A = A.to(device)
+B = B.to(device)
+
+C = A + B
+
+print("Selected Device:", device)
+print("Addition Result:", C)
+
+# 10. GPU MATRIX MULTIPLICATION
+print("\n8. MATRIX MULTIPLICATION")
+
+X = torch.rand(1000, 1000, device=device)
+Y = torch.rand(1000, 1000, device=device)
+
+Z = torch.matmul(X, Y)
+
+print("Matrix A Shape:", X.shape)
+print("Matrix B Shape:", Y.shape)
+print("Result Shape:", Z.shape)
+print("Matrix Multiplication Successful!")
+
+# 11. CREATE TRAINING DATA
+print("\n9. NEURAL NETWORK TRAINING")
+
+input_data = torch.tensor(
+    [[1.0], [2.0], [3.0], [4.0], [5.0]],
+    device=device
+)
+
+output_data = torch.tensor(
+    [[3.0], [5.0], [7.0], [9.0], [11.0]],
+    device=device
+)
+
+# 12. BUILD NEURAL NETWORK
+class SimpleModel(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(1, 1)
+
+    def forward(self, x):
+        return self.linear(x)
+
+model = SimpleModel().to(device)
+
+# 13. LOSS FUNCTION AND OPTIMIZER
+loss_function = nn.MSELoss()
+optimizer = optim.SGD(model.parameters(), lr=0.01)
+
+# 14. TRAIN MODEL
+epochs = 500
+
+for epoch in range(epochs):
+
+    predictions = model(input_data)
+
+    loss = loss_function(predictions, output_data)
+
+    optimizer.zero_grad()
+
+    loss.backward()
+
+    optimizer.step()
+
+    if (epoch + 1) % 100 == 0:
+        print(
+            f"Epoch {epoch+1}, Loss: {loss.item():.6f}"
+        )
+
+print("\nModel Training Completed!")
+
+# 15. TEST MODEL
+model.eval()
+
+test_input = torch.tensor([[6.0]], device=device)
+
+with torch.no_grad():
+    prediction = model(test_input)
+
+print("Input:", 6.0)
+print("Predicted Output:", prediction.item())
+print("Expected Output:", 13.0)
+
+# 16. FINAL ENVIRONMENT REPORT
+print("\n" + "=" * 55)
+print("FINAL PROJECT REPORT")
+print("=" * 55)
+
+print("Git Repository: Created")
+print("Git Workflow: Completed")
+print("PyTorch:", torch.__version__)
+print("CUDA Available:", torch.cuda.is_available())
+print("Execution Device:", device)
+print("GPU Computation: Completed")
+print("Neural Network Training: Completed")
+
+print("\nPROJECT EXECUTED SUCCESSFULLY!")
+print("=" * 55)

@@ -1,0 +1,397 @@
+# ============================================================
+# PROJECT: INFERENCE REQUEST TRACE
+# API INPUT -> PREPROCESSING -> MODEL EXECUTION -> RESPONSE
+# Technologies: FastAPI, YOLOv8, PyTorch, GPU, Uvicorn
+# ============================================================
+
+# STEP 1: INSTALL LIBRARIES
+
+!pip install -q ultralytics fastapi uvicorn python-multipart pillow requests
+
+# STEP 2: IMPORT LIBRARIES
+
+import torch
+import time
+import uuid
+import threading
+import socket
+import requests
+import json
+
+from PIL import Image, ImageDraw
+from io import BytesIO
+
+from ultralytics import YOLO
+
+from fastapi import FastAPI, UploadFile, File, HTTPException
+
+from IPython.display import display
+from google.colab import files
+
+import uvicorn
+
+print("All Libraries Imported Successfully!")
+
+# STEP 3: CHECK GPU
+
+if torch.cuda.is_available():
+    DEVICE = 0
+    print("GPU:", torch.cuda.get_device_name(0))
+else:
+    DEVICE = "cpu"
+    print("GPU Not Available. Using CPU.")
+
+# STEP 4: LOAD AI MODEL
+
+model = YOLO("yolov8n.pt")
+
+print("YOLOv8 Model Loaded Successfully!")
+
+# STEP 5: CREATE FASTAPI APPLICATION
+
+app = FastAPI(
+    title="VisionPort Inference API",
+    description="Inference Request Trace System"
+)
+
+@app.get("/")
+def home():
+    return {
+        "message": "VisionPort API Running Successfully"
+    }
+
+@app.get("/health")
+def health():
+    return {
+        "status": "Healthy",
+        "device": str(DEVICE)
+    }
+
+# STEP 6: INFERENCE REQUEST TRACE
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+
+    request_id = str(uuid.uuid4())
+
+    start_time = time.perf_counter()
+
+    # STAGE 1: API INPUT
+
+    input_start = time.perf_counter()
+
+    contents = await file.read()
+
+    input_time = (
+        time.perf_counter() - input_start
+    ) * 1000
+
+    if not contents:
+        raise HTTPException(
+            status_code=400,
+            detail="Empty file uploaded"
+        )
+
+    print("\n========== INFERENCE TRACE ==========")
+    print("Request ID:", request_id)
+    print("Filename:", file.filename)
+
+    # STAGE 2: PREPROCESSING
+
+    preprocess_start = time.perf_counter()
+
+    try:
+        image = Image.open(
+            BytesIO(contents)
+        ).convert("RGB")
+
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid image file"
+        )
+
+    width, height = image.size
+
+    decode_time = (
+        time.perf_counter() - preprocess_start
+    ) * 1000
+
+    print("Image Size:", image.size)
+    print("Image Decoded Successfully")
+
+    # STAGE 3: MODEL EXECUTION
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+    inference_start = time.perf_counter()
+
+    results = model.predict(
+        source=image,
+        imgsz=640,
+        conf=0.25,
+        device=DEVICE,
+        verbose=False
+    )
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+    inference_time = (
+        time.perf_counter() - inference_start
+    ) * 1000
+
+    result = results[0]
+
+    print("Model Execution Completed")
+
+    # STAGE 4: POSTPROCESSING
+
+    detections = []
+
+    if result.boxes is not None:
+
+        for i in range(len(result.boxes)):
+
+            class_id = int(
+                result.boxes.cls[i].item()
+            )
+
+            confidence = float(
+                result.boxes.conf[i].item()
+            )
+
+            coordinates = (
+                result.boxes.xyxy[i]
+                .cpu()
+                .tolist()
+            )
+
+            detections.append({
+
+                "object_name": result.names[class_id],
+
+                "confidence": round(confidence, 3),
+
+                "bounding_box": [
+                    round(x, 2) for x in coordinates
+                ]
+
+            })
+
+    print("Postprocessing Completed")
+
+    # STAGE 5: API RESPONSE
+
+    speed = result.speed
+
+    total_time = (
+        time.perf_counter() - start_time
+    ) * 1000
+
+    response = {
+
+        "request_id": request_id,
+
+        "status": "success",
+
+        "input": {
+
+            "filename": file.filename,
+
+            "image_width": width,
+
+            "image_height": height,
+
+            "file_size_bytes": len(contents)
+
+        },
+
+        "execution": {
+
+            "model": "YOLOv8",
+
+            "device": (
+                "GPU" if torch.cuda.is_available()
+                else "CPU"
+            )
+
+        },
+
+        "trace": {
+
+            "api_input_ms": round(input_time, 2),
+
+            "image_decode_ms": round(decode_time, 2),
+
+            "model_preprocessing_ms": round(
+                speed.get("preprocess", 0), 2
+            ),
+
+            "model_inference_ms": round(
+                speed.get("inference", 0), 2
+            ),
+
+            "model_postprocessing_ms": round(
+                speed.get("postprocess", 0), 2
+            ),
+
+            "model_call_total_ms": round(
+                inference_time, 2
+            ),
+
+            "total_request_ms": round(
+                total_time, 2
+            )
+
+        },
+
+        "detections": detections
+
+    }
+
+    print("Detected Objects:", len(detections))
+    print("Total Request Time:", round(total_time, 2), "ms")
+    print("Inference Completed Successfully!")
+
+    return response
+
+
+print("\nFastAPI Application Created Successfully!")
+
+# STEP 7: START API SERVER
+
+with socket.socket() as s:
+    s.bind(("127.0.0.1", 0))
+    PORT = s.getsockname()[1]
+
+BASE_URL = f"http://127.0.0.1:{PORT}"
+
+server = uvicorn.Server(
+    uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=PORT,
+        log_level="warning"
+    )
+)
+
+server_thread = threading.Thread(
+    target=server.run,
+    daemon=True
+)
+
+server_thread.start()
+
+# Wait for server to start
+
+for attempt in range(30):
+
+    try:
+        health_response = requests.get(
+            BASE_URL + "/health",
+            timeout=1
+        )
+
+        if health_response.status_code == 200:
+            break
+
+    except requests.RequestException:
+        time.sleep(1)
+
+else:
+    raise RuntimeError("FastAPI Server Failed to Start")
+
+print("\nFastAPI Server Started Successfully!")
+print("Server Health:", health_response.json())
+print("API Documentation:", BASE_URL + "/docs")
+
+# STEP 8: UPLOAD IMAGE
+
+print("\nUpload an image for object detection:")
+
+uploaded = files.upload()
+
+if not uploaded:
+    raise RuntimeError("No image uploaded")
+
+filename = next(iter(uploaded))
+
+print("Uploaded Image:", filename)
+
+# STEP 9: SEND API REQUEST
+
+with open(filename, "rb") as image_file:
+
+    response = requests.post(
+        BASE_URL + "/predict",
+
+        files={
+            "file": (
+                filename,
+                image_file,
+                "application/octet-stream"
+            )
+        },
+
+        timeout=120
+    )
+
+print("\nHTTP STATUS:", response.status_code)
+
+response.raise_for_status()
+
+output = response.json()
+
+# STEP 10: DISPLAY JSON RESPONSE
+
+print("\n========== FINAL API RESPONSE ==========")
+
+print(json.dumps(output, indent=4))
+
+# STEP 11: DISPLAY DETECTED OBJECTS
+
+image = Image.open(filename).convert("RGB")
+
+draw = ImageDraw.Draw(image)
+
+for obj in output["detections"]:
+
+    x1, y1, x2, y2 = obj["bounding_box"]
+
+    label = (
+        obj["object_name"]
+        + " "
+        + str(obj["confidence"])
+    )
+
+    draw.rectangle(
+        [x1, y1, x2, y2],
+        outline="red",
+        width=4
+    )
+
+    draw.text(
+        (x1, max(0, y1 - 20)),
+        label,
+        fill="red"
+    )
+
+print("\n========== DETECTION RESULT ==========")
+
+display(image)
+
+# STEP 12: FINAL SUMMARY
+
+print("\n========== PROJECT SUMMARY ==========")
+
+print("Project: Inference Request Trace")
+print("API Framework: FastAPI")
+print("AI Model: YOLOv8")
+print("Execution Device:", DEVICE)
+print("Total Objects Detected:", len(output["detections"]))
+print("Total Request Time:",
+      output["trace"]["total_request_ms"], "ms")
+
+print("\nPROJECT EXECUTED SUCCESSFULLY!")

@@ -1,0 +1,154 @@
+# ============================================================
+# COCO DATASET EXPLORATION - INDIAN TRAFFIC IMAGES
+# Categories + Bounding Boxes Visualization
+# Runs directly in Google Colab
+# ============================================================
+
+!pip -q install pycocotools
+
+import os
+import random
+import requests
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from PIL import Image
+from pycocotools.coco import COCO
+
+# ------------------------------------------------------------
+# DOWNLOAD COCO ANNOTATION FILE
+# ------------------------------------------------------------
+
+if not os.path.exists("annotations_trainval2017.zip"):
+    !wget -q http://images.cocodataset.org/annotations/annotations_trainval2017.zip
+
+if not os.path.exists("annotations"):
+    !unzip -q annotations_trainval2017.zip
+
+# ------------------------------------------------------------
+# LOAD COCO ANNOTATIONS
+# ------------------------------------------------------------
+
+annFile = "annotations/instances_val2017.json"
+coco = COCO(annFile)
+
+# ------------------------------------------------------------
+# TRAFFIC RELATED CLASSES
+# ------------------------------------------------------------
+
+traffic_classes = [
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "bus",
+    "truck",
+    "traffic light"
+]
+
+print("\nTRAFFIC RELATED COCO CATEGORIES\n")
+
+catIds = coco.getCatIds(catNms=traffic_classes)
+cats = coco.loadCats(catIds)
+
+for cat in cats:
+    print("•", cat["name"])
+
+# ------------------------------------------------------------
+# GET IMAGES CONTAINING TRAFFIC OBJECTS
+# ------------------------------------------------------------
+
+imgIds = []
+
+for catId in catIds:
+    imgIds += coco.getImgIds(catIds=[catId])
+
+imgIds = list(set(imgIds))
+
+print("\nTotal Traffic Images Found:", len(imgIds))
+
+# ------------------------------------------------------------
+# PICK RANDOM IMAGE
+# ------------------------------------------------------------
+
+img_info = coco.loadImgs(random.choice(imgIds))[0]
+
+print("\nSelected Image:")
+print("File:", img_info["file_name"])
+
+# ------------------------------------------------------------
+# DOWNLOAD IMAGE
+# ------------------------------------------------------------
+
+img_url = img_info["coco_url"]
+
+image_file = img_info["file_name"]
+
+if not os.path.exists(image_file):
+    r = requests.get(img_url)
+    open(image_file, "wb").write(r.content)
+
+image = Image.open(image_file)
+
+# ------------------------------------------------------------
+# LOAD ANNOTATIONS
+# ------------------------------------------------------------
+
+annIds = coco.getAnnIds(imgIds=[img_info["id"]])
+anns = coco.loadAnns(annIds)
+
+# ------------------------------------------------------------
+# DISPLAY IMAGE + BOUNDING BOXES
+# ------------------------------------------------------------
+
+fig, ax = plt.subplots(1, figsize=(12,8))
+ax.imshow(image)
+
+for ann in anns:
+
+    cat_name = coco.loadCats([ann["category_id"]])[0]["name"]
+
+    x, y, w, h = ann["bbox"]
+
+    rect = patches.Rectangle(
+        (x, y),
+        w,
+        h,
+        linewidth=2,
+        edgecolor='red',
+        facecolor='none'
+    )
+
+    ax.add_patch(rect)
+
+    ax.text(
+        x,
+        y-5,
+        cat_name,
+        color='yellow',
+        fontsize=10,
+        bbox=dict(facecolor='black', alpha=0.7)
+    )
+
+plt.axis("off")
+plt.show()
+
+# ------------------------------------------------------------
+# PRINT OBJECT COUNTS
+# ------------------------------------------------------------
+
+object_counts = {}
+
+for ann in anns:
+    cat_name = coco.loadCats([ann["category_id"]])[0]["name"]
+
+    if cat_name not in object_counts:
+        object_counts[cat_name] = 0
+
+    object_counts[cat_name] += 1
+
+print("\nOBJECTS DETECTED\n")
+
+for name, count in object_counts.items():
+    print(f"{name}: {count}")
+
+print("\nCOCO DATASET EXPLORATION COMPLETED")

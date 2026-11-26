@@ -1,0 +1,322 @@
+
+# ================================================================
+# VISIONPORT
+# MODEL ARTIFACT LIFECYCLE
+# Architecture, Trained Checkpoint, ONNX Graph and TensorRT Engine
+# ================================================================
+!pip install -q ultralytics onnx onnxruntime pyyaml
+import os
+import shutil
+import torch
+import ultralytics
+from ultralytics import YOLO
+
+
+# ================================================================
+# STEP 1: INSTALL AND CHECK ENVIRONMENT
+# ================================================================
+
+print("\nSTEP 1: ENVIRONMENT SETUP")
+
+
+
+import onnx
+import onnxruntime as ort
+
+print("PyTorch Version:", torch.__version__)
+print("Ultralytics Version:", ultralytics.__version__)
+print("ONNX Version:", onnx.__version__)
+
+cuda_available = torch.cuda.is_available()
+
+print("CUDA Available:", cuda_available)
+
+if cuda_available:
+    print("GPU:", torch.cuda.get_device_name(0))
+    print("CUDA Version:", torch.version.cuda)
+else:
+    print("GPU not available. Using CPU for model operations.")
+
+# ================================================================
+# STEP 2: CREATE PROJECT DIRECTORIES
+# ================================================================
+
+print("\nSTEP 2: PROJECT DIRECTORY SETUP")
+
+project_dir = "/content/VisionPort"
+
+architecture_dir = os.path.join(project_dir, "architecture")
+checkpoint_dir = os.path.join(project_dir, "checkpoints")
+onnx_dir = os.path.join(project_dir, "onnx")
+tensorrt_dir = os.path.join(project_dir, "tensorrt")
+results_dir = os.path.join(project_dir, "results")
+
+for folder in [
+    architecture_dir,
+    checkpoint_dir,
+    onnx_dir,
+    tensorrt_dir,
+    results_dir
+]:
+    os.makedirs(folder, exist_ok=True)
+
+print("Project directories created successfully!")
+
+# ================================================================
+# STEP 3: MODEL ARCHITECTURE
+# ================================================================
+
+# Load YOLOv8 architecture without pretrained weights
+architecture_model = YOLO("yolov8n.yaml")
+
+print("\nYOLOv8 architecture loaded successfully!")
+
+print("\nModel Summary:")
+architecture_model.info()
+
+# Save architecture configuration
+architecture_config = os.path.join(
+    architecture_dir,
+    "yolov8n.yaml"
+)
+
+import yaml
+
+with open(architecture_config, "w") as f:
+    yaml.safe_dump(
+        architecture_model.model.yaml,
+        f,
+        sort_keys=False
+    )
+
+print("\nArchitecture configuration saved:")
+print(architecture_config)
+
+# ================================================================
+# STEP 4: LOAD TRAINED CHECKPOINT
+# ================================================================
+
+print("\nSTEP 4: PRETRAINED CHECKPOINT LOADING")
+
+# Load pretrained YOLOv8 weights
+model = YOLO("yolov8n.pt")
+
+print("\nPretrained YOLOv8 checkpoint loaded!")
+
+print("Model task:", model.task)
+print("Number of classes:", len(model.names))
+
+# Save checkpoint
+checkpoint_path = os.path.join(
+    checkpoint_dir,
+    "yolov8n_pretrained.pt"
+)
+
+model.save(checkpoint_path)
+
+print("\nCheckpoint saved successfully!")
+print("Checkpoint location:", checkpoint_path)
+
+print("Checkpoint size:",
+      round(os.path.getsize(checkpoint_path) / (1024 * 1024), 2),
+      "MB")
+
+# ================================================================
+# STEP 5: EXPORT MODEL TO ONNX
+# ================================================================
+
+
+
+onnx_path = model.export(
+    format="onnx",
+    imgsz=640,
+    simplify=True,
+    dynamic=False
+)
+
+# Copy exported ONNX file into project directory
+onnx_destination = os.path.join(
+    onnx_dir,
+    "yolov8n.onnx"
+)
+
+shutil.copy2(
+    onnx_path,
+    onnx_destination
+)
+
+print("\nONNX export completed!")
+
+print("ONNX file:", onnx_destination)
+
+print("ONNX size:",
+      round(os.path.getsize(onnx_destination) / (1024 * 1024), 2),
+      "MB")
+
+# Validate ONNX graph
+print("\nValidating ONNX graph...")
+
+onnx_model = onnx.load(onnx_destination)
+
+onnx.checker.check_model(onnx_model)
+
+print("ONNX graph validation successful!")
+
+# ================================================================
+# STEP 6: ONNX INFERENCE TEST
+# ================================================================
+
+
+session = ort.InferenceSession(
+    onnx_destination,
+    providers=["CPUExecutionProvider"]
+)
+
+print("ONNX Runtime session created successfully!")
+
+print("Input details:")
+
+for input_info in session.get_inputs():
+    print("Name:", input_info.name)
+    print("Shape:", input_info.shape)
+
+print("\nOutput details:")
+
+for output_info in session.get_outputs():
+    print("Name:", output_info.name)
+    print("Shape:", output_info.shape)
+
+print("\nONNX model is ready for inference!")
+
+# ================================================================
+# STEP 7: TENSORRT ENGINE EXPORT
+# ================================================================
+
+print("STEP 7: TENSORRT ENGINE EXPORT")
+
+
+tensorrt_path = os.path.join(
+    tensorrt_dir,
+    "yolov8n.engine"
+)
+
+try:
+
+    import tensorrt as trt
+
+    print("TensorRT Version:", trt.__version__)
+
+    if not cuda_available:
+
+        print("TensorRT export skipped: NVIDIA GPU unavailable.")
+
+    else:
+
+        print("\nExporting TensorRT engine...")
+
+        engine_path = model.export(
+            format="engine",
+            imgsz=640,
+            half=True,
+            device=0
+        )
+
+        shutil.copy2(
+            engine_path,
+            tensorrt_path
+        )
+
+        print("\nTensorRT engine exported successfully!")
+
+        print("Engine location:", tensorrt_path)
+
+        print("Engine size:",
+              round(os.path.getsize(tensorrt_path) / (1024 * 1024), 2),
+              "MB")
+
+except ImportError:
+
+    print("TensorRT is not installed in this Colab environment.")
+
+    print("TensorRT engine export skipped.")
+
+    print("The architecture, checkpoint and ONNX stages are completed.")
+
+except Exception as error:
+
+    print("\nTensorRT export could not be completed.")
+    print("Reason:", str(error))
+
+    print("Other model artifacts are still available.")
+
+# ================================================================
+# STEP 8: ARTIFACT COMPARISON
+# ================================================================
+
+
+
+artifact_files = [
+    ("Architecture YAML", architecture_config),
+    ("Trained Checkpoint", checkpoint_path),
+    ("ONNX Graph", onnx_destination),
+    ("TensorRT Engine", tensorrt_path)
+]
+
+for name, path in artifact_files:
+
+    if os.path.exists(path):
+
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+
+        print(
+            f"{name:25s} | "
+            f"Available | "
+            f"{size_mb:.2f} MB"
+        )
+
+    else:
+
+        print(
+            f"{name:25s} | Not generated"
+        )
+
+# ================================================================
+# STEP 9: FINAL PROJECT REPORT
+# ================================================================
+
+
+
+print("\nArchitecture:")
+print("YOLOv8 Nano")
+
+print("\nCheckpoint:")
+print("yolov8n_pretrained.pt")
+
+print("\nONNX:")
+print("yolov8n.onnx")
+
+print("\nTensorRT:")
+if os.path.exists(tensorrt_path):
+    print("yolov8n.engine - Generated")
+else:
+    print("Not generated in this environment")
+
+print("\nProject Directory:")
+print(project_dir)
+
+print("\nGenerated Project Structure:")
+
+for root, dirs, filenames in os.walk(project_dir):
+
+    level = root.replace(project_dir, "").count(os.sep)
+
+    indent = " " * 4 * level
+
+    print(f"{indent}{os.path.basename(root)}/")
+
+    for filename in filenames:
+        print(f"{indent}    {filename}")
+
+
+print("MODEL ARTIFACT LIFECYCLE COMPLETED!")
+
